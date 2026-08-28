@@ -12,9 +12,6 @@ import (
 )
 
 // querySubscriptions 跑脚本 §1 的子集（单连接：subscriber 视角），返回订阅表主行。
-// 注：sub_slot（pg_replication_slots）和 pg_stat_replication_slots 是 publisher 端视图；
-// 单连接场景下 subscriber 上的 pg_replication_slots 视图也是空的（PG 设计如此）。
-// v0.1 简化：在 subscriber 端跑，slot_* 列允许为空。后续 v0.2 跨 publisher/subscriber。
 func querySubscriptions(ctx context.Context, pool *pgxpool.Pool) ([]model.SubscriptionSummary, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT
@@ -51,18 +48,15 @@ func querySubscriptions(ctx context.Context, pool *pgxpool.Pool) ([]model.Subscr
 		var receivedLSN, latestEndLSN *string
 		var lastRecv *time.Time
 		var workerType string
+		conflicts := ensureKeys(map[string]int64{})
+		var ci, cu, cum, cd, coud, cod, cmu int64
+
 		if err := rows.Scan(
 			&s.SubName, &s.SubEnabled, &s.SlotName,
 			&receivedLSN, &latestEndLSN, &lastRecv,
 			&s.ApplyWorkerPID, &workerType,
 			&s.ApplyErrorCount,
-			&s.ConflictCounts["confl_insert_exists"],
-			&s.ConflictCounts["confl_update_exists"],
-			&s.ConflictCounts["confl_update_missing"],
-			&s.ConflictCounts["confl_delete_missing"],
-			&s.ConflictCounts["confl_update_origin_differs"],
-			&s.ConflictCounts["confl_delete_origin_differs"],
-			&s.ConflictCounts["confl_multiple_unique_conflicts"],
+			&ci, &cu, &cum, &cd, &coud, &cod, &cmu,
 		); err != nil {
 			return nil, err
 		}
@@ -70,11 +64,17 @@ func querySubscriptions(ctx context.Context, pool *pgxpool.Pool) ([]model.Subscr
 			s.LastRecvAgeSeconds = time.Since(*lastRecv).Seconds()
 		}
 		if receivedLSN != nil && latestEndLSN != nil {
-			// 简化：不展开 4 段 lag（需要 publisher 端视图），仅给 received→applied 这一段
 			seg, _ := lsnDiff(*receivedLSN, *latestEndLSN, pool, ctx)
 			s.SegReceivedToApplied = seg
 		}
-		s.ConflictCounts = ensureKeys(s.ConflictCounts)
+		conflicts["confl_insert_exists"] = ci
+		conflicts["confl_update_exists"] = cu
+		conflicts["confl_update_missing"] = cum
+		conflicts["confl_delete_missing"] = cd
+		conflicts["confl_update_origin_differs"] = coud
+		conflicts["confl_delete_origin_differs"] = cod
+		conflicts["confl_multiple_unique_conflicts"] = cmu
+		s.ConflictCounts = conflicts
 		s.Severity = severityOf(s)
 		out = append(out, s)
 	}
@@ -83,7 +83,6 @@ func querySubscriptions(ctx context.Context, pool *pgxpool.Pool) ([]model.Subscr
 
 // queryReplicationSlotCounters 当前 PG 视角的 pg_stat_replication_slots。
 // 注意：subscriber 端该视图为空；只有 publisher 端才有数据。
-// v0.1：如果连接到的是 subscriber 节点，这里会自然为空 → spill stats 全 0。
 func queryReplicationSlotCounters(ctx context.Context, pool *pgxpool.Pool) (map[string]map[string]int64, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT slot_name,
@@ -100,17 +99,25 @@ func queryReplicationSlotCounters(ctx context.Context, pool *pgxpool.Pool) (map[
 	out := map[string]map[string]int64{}
 	for rows.Next() {
 		var name string
-		var m map[string]int64
-		m = map[string]int64{}
+		var spillTxn, spillCnt, spillByt, streamTxn, streamCnt, streamByt, totalTxn, totalByt int64
 		if err := rows.Scan(
 			&name,
-			&m["spill_txns"], &m["spill_count"], &m["spill_bytes"],
-			&m["stream_txns"], &m["stream_count"], &m["stream_bytes"],
-			&m["total_txns"], &m["total_bytes"],
+			&spillTxn, &spillCnt, &spillByt,
+			&streamTxn, &streamCnt, &streamByt,
+			&totalTxn, &totalByt,
 		); err != nil {
 			return nil, err
 		}
-		out[name] = m
+		out[name] = map[string]int64{
+			"spill_txns":   spillTxn,
+			"spill_count":  spillCnt,
+			"spill_bytes":  spillByt,
+			"stream_txns":  streamTxn,
+			"stream_count": streamCnt,
+			"stream_bytes": streamByt,
+			"total_txns":   totalTxn,
+			"total_bytes":  totalByt,
+		}
 	}
 	return out, rows.Err()
 }
@@ -173,10 +180,7 @@ func queryWorkers(ctx context.Context, pool *pgxpool.Pool) ([]model.WorkerStat, 
 		if endTime != nil {
 			w.LastApplyAgeSec = time.Since(*endTime).Seconds()
 		}
-		if recvLSN != nil && endLSN != nil {
-			w.InMemoryLag = "n/a"
-		}
-		// 高亮
+		w.InMemoryLag = "n/a"
 		switch {
 		case !w.Alive:
 			w.Severity = "critical"
@@ -197,9 +201,9 @@ func queryReplicas(ctx context.Context, pool *pgxpool.Pool) ([]model.PhysicalRep
 		SELECT application_name, COALESCE(host(client_addr), ''), COALESCE(client_port, 0),
 		       state, sync_state,
 		       sent_lsn::text, write_lsn::text, flush_lsn::text, replay_lsn::text,
-		       extract(epoch from write_lag)::float8,
-		       extract(epoch from flush_lag)::float8,
-		       extract(epoch from replay_lag)::float8,
+		       COALESCE(extract(epoch from write_lag)::float8, 0),
+		       COALESCE(extract(epoch from flush_lag)::float8, 0),
+		       COALESCE(extract(epoch from replay_lag)::float8, 0),
 		       backend_start, reply_time
 		FROM pg_stat_replication
 		ORDER BY application_name
@@ -212,9 +216,10 @@ func queryReplicas(ctx context.Context, pool *pgxpool.Pool) ([]model.PhysicalRep
 	var out []model.PhysicalReplicaStat
 	for rows.Next() {
 		var r model.PhysicalReplicaStat
+		var port int
 		var backendStart, replyTime time.Time
 		if err := rows.Scan(
-			&r.ApplicationName, &r.ClientAddr, new(int),
+			&r.ApplicationName, &r.ClientAddr, &port,
 			&r.State, &r.SyncState,
 			&r.SentLSN, &r.WriteLSN, &r.FlushLSN, &r.ReplayLSN,
 			&r.WriteLagSec, &r.FlushLagSec, &r.ReplayLagSec,
@@ -296,30 +301,19 @@ func querySlotHealth(ctx context.Context, pool *pgxpool.Pool) ([]model.SlotHealt
 	return out, rows.Err()
 }
 
-// lsnDiff 计算两个 LSN 的字节差。subscriber 端可用（pg_wal_lsn_diff 是 PG 函数）。
 func lsnDiff(a, b string, pool *pgxpool.Pool, ctx context.Context) (int64, error) {
 	var d int64
 	err := pool.QueryRow(ctx, "SELECT pg_wal_lsn_diff($1::pg_lsn, $2::pg_lsn)", a, b).Scan(&d)
 	return d, err
 }
 
-// severityOf 根据 sub 行判定严重度（参考文档 §九）。
 func severityOf(s model.SubscriptionSummary) string {
 	bad := "ok"
-	thresholds := []struct {
-		critical int64
-		warn     int64
-		value    int64
-	}{
-		{10 * 1024 * 1024 * 1024, 1024 * 1024 * 1024, s.TotalLag},
+	if s.TotalLag >= 10*1024*1024*1024 {
+		return "critical"
 	}
-	for _, t := range thresholds {
-		if t.value >= t.critical {
-			return "critical"
-		}
-		if t.value >= t.warn {
-			bad = "warn"
-		}
+	if s.TotalLag >= 1024*1024*1024 {
+		bad = "warn"
 	}
 	if s.ApplyErrorCount >= 50 {
 		return "critical"
@@ -374,5 +368,4 @@ func humanDuration(d time.Duration) string {
 	return fmt.Sprintf("%dd %dh", int(d.Hours())/24, int(d.Hours())%24)
 }
 
-// 触发 imports（避免编译错误）
 var _ = pgx.ErrNoRows

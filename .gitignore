@@ -1,0 +1,14 @@
+# Go
+bin/
+*.exe
+*.test
+*.out
+*.prof
+# Frontend
+web/node_modules/
+web/dist/
+web/.vite/
+# Build cache (sandbox uses /tmp)
+.cache/
+*.swp
+.DS_Store

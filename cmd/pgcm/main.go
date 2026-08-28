@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pgcm/pgcm/internal/model"
 	"github.com/pgcm/pgcm/internal/pg"
 	"github.com/pgcm/pgcm/internal/server"
 	"github.com/pgcm/pgcm/internal/store"

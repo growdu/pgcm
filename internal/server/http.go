@@ -64,7 +64,7 @@ func New(d Deps) *chi.Mux {
 	return r
 }
 
-const welcomeHTML = `<!doctype html>
+var welcomeHTML = `<!doctype html>
 <html lang="zh">
 <head><meta charset="utf-8"><title>pgcm</title></head>
 <body>
