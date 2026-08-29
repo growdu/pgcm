@@ -51,7 +51,7 @@ jobs:
         working-directory: web
         run: pnpm build
       - name: upload dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: web-dist
           path: web/dist
@@ -94,7 +94,7 @@ jobs:
           kill $PGCM_PID
           wait $PGCM_PID 2>/dev/null || true
       - name: upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pgcm-bin
           path: bin/pgcm
