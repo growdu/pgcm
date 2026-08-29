@@ -7,6 +7,25 @@ html, body, #root {
 }
 
 body {
+  margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Roboto, sans-serif;
   font-size: 14px;
+}
+
+html.dark body {
+  background: #0b0f17;
+  color: #e5e7eb;
+}
+
+/* severity-* text classes (referenced by lib/format.ts#severityColor) */
+@layer utilities {
+  .text-severity-ok { color: #16a34a; }
+  .text-severity-warn { color: #d97706; }
+  .text-severity-alert { color: #dc2626; }
+  .text-severity-critical { color: #b91c1c; }
+  .text-severity-unknown { color: #6b7280; }
+  html.dark .text-severity-ok { color: #4ade80; }
+  html.dark .text-severity-warn { color: #fbbf24; }
+  html.dark .text-severity-alert { color: #f87171; }
+  html.dark .text-severity-critical { color: #fca5a5; }
 }

@@ -1,16 +1,16 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  darkMode: 'class',
   content: ['./index.html', './src/**/*.{ts,tsx}'],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
         severity: {
-          ok: '#10B981',
-          warn: '#F59E0B',
-          alert: '#EF4444',
-          critical: '#7F1D1D',
-          unknown: '#9CA3AF',
+          ok: '#16a34a',       // green-600
+          warn: '#d97706',     // amber-600
+          alert: '#dc2626',    // red-600
+          critical: '#7f1d1d', // red-900
+          unknown: '#6b7280',  // gray-500
         },
       },
     },
