@@ -1,0 +1,102 @@
+# .goreleaser.yml — release binary builder.
+# Triggered by .github/workflows/release.yml on tag push (v*).
+# Produces 5 binaries + Docker image + Homebrew tap.
+
+version: 2
+
+project_name: pgcm
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: pgcm
+    main: ./cmd/pgcm
+    binary: pgcm
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/pgcm/pgcm/internal/version.Version={{ .Version }}
+      - -X github.com/pgcm/pgcm/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/pgcm/pgcm/internal/version.Date={{ .Date }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    formats: [tar.gz, zip]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - README.md
+      - LICENSE
+      - docs/**
+
+dockers:
+  - id: ghcr
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform={{ .Platform }}"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+    extra_files:
+      - scripts/
+    build_args:
+      - VERSION={{ .Version }}
+      - COMMIT={{ .ShortCommit }}
+      - DATE={{ .Date }}
+    images:
+      - ghcr.io/growdu/pgcm
+    tags:
+      - "{{ .Version }}"
+      - "{{ .Major }}.{{ .Patch }}"
+      - latest
+
+brews:
+  - repository:
+      owner: growdu
+      name: homebrew-tap
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    homepage: https://github.com/growdu/pgcm
+    description: Browser-based PostgreSQL replication monitor.
+    install: |
+      bin.install "pgcm"
+    test: |
+      system "#{bin}/pgcm --help"
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch

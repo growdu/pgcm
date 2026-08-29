@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    name: Release · binaries + docker + homebrew
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: pnpm install + build
+        working-directory: web
+        run: |
+          pnpm install
+          pnpm build
+      - name: sync web/dist → cmd/pgcm/static
+        run: |
+          rm -rf cmd/pgcm/static
+          mkdir -p cmd/pgcm/static
+          cp -R web/dist/. cmd/pgcm/static/
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_BUILDKIT: 1
