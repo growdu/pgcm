@@ -1,0 +1,16 @@
+.git
+.github
+.agents
+.codex
+node_modules
+web/node_modules
+web/dist
+bin
+*.log
+*.swp
+.DS_Store
+Makefile
+docs/
+scripts/
+docker-compose.yml
+Dockerfile

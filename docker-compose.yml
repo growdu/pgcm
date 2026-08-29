@@ -1,0 +1,80 @@
+# Quick smoke-test stack: a publisher + a subscriber + pgcm.
+#
+#   - publisher:  postgres with logical replication slot "demo_slot" + publication "demo_pub"
+#   - subscriber: postgres that subscribes via the same DSN-less loopback DSN
+#   - pgcm:       connects to publisher (and subscriber in v0.2)
+#
+# Usage:
+#   docker compose up -d
+#   open http://localhost:8080
+#
+# Bind pgcm to host with --listen 0.0.0.0:8080 and add --allow-remote since
+# we're not on loopback.
+
+services:
+  publisher:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: demo
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=4"
+      - "-c"
+      - "max_wal_senders=4"
+      - "-c"
+      - "log_statement=all"
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d demo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - publisher-data:/var/lib/postgresql/data
+      - ./scripts/sql:/docker-entrypoint-initdb.d:ro
+
+  subscriber:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: demo
+    depends_on:
+      publisher:
+        condition: service_healthy
+    ports:
+      - "55433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d demo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pgcm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: dev
+        COMMIT: local
+        DATE: "1970-01-01T00:00:00Z"
+    depends_on:
+      publisher:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    command:
+      - "--listen"
+      - "0.0.0.0:8080"
+      - "--allow-remote"
+    # Default DSN pre-fill: pgcm will try to connect on startup.
+    # Adjust as needed.
+    environment:
+      TZ: UTC
+
+volumes:
+  publisher-data:

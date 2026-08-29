@@ -1,4 +1,5 @@
 .PHONY: all build run dev web web-build web-install test fmt vet clean
+.PHONY: smoke docker-build docker-run docker-push
 
 all: build
 
@@ -36,6 +37,26 @@ clean:
 
 test:
 	go test ./...
+
+smoke: build
+	./scripts/smoke.sh
+
+docker-build:
+	docker build -t pgcm:dev \
+	  --build-arg VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev) \
+	  --build-arg COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown) \
+	  --build-arg DATE=$(shell date -u +%Y-%m-%dT%H:%M:%SZ) \
+	  .
+
+docker-run: docker-build
+	docker run --rm -p 8080:8080 pgcm:dev --listen 0.0.0.0:8080 --allow-remote
+
+docker-push:
+	docker build -t ghcr.io/growdu/pgcm:latest \
+	  --build-arg VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev) \
+	  --build-arg COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown) \
+	  --build-arg DATE=$(shell date -u +%Y-%m-%dT%H:%M:%SZ) \
+	  .
 
 fmt:
 	gofmt -w .
