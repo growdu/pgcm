@@ -76,14 +76,15 @@ type SlotHealth struct {
 
 // Snapshot 一个 tick 的完整快照（前端用）。
 type Snapshot struct {
-	TakenAt   string         `json:"taken_at"`
-	NodeID    string         `json:"node_id"`
-	NodeName  string         `json:"node_name"`
-	PGVersion string         `json:"pg_version"`
-	Logical   *LogicalPanel  `json:"logical,omitempty"`
-	Physical  *PhysicalPanel `json:"physical,omitempty"`
-	Slots     []SlotHealth   `json:"slots"`
-	Errors    []string       `json:"errors,omitempty"`
+	TakenAt     string         `json:"taken_at"`
+	NodeID      string         `json:"node_id"`
+	NodeName    string         `json:"node_name"`
+	PGVersion   string         `json:"pg_version"`
+	ClusterKind string         `json:"cluster_kind,omitempty"`
+	Logical     *LogicalPanel  `json:"logical,omitempty"`
+	Physical    *PhysicalPanel `json:"physical,omitempty"`
+	Slots       []SlotHealth   `json:"slots"`
+	Errors      []string       `json:"errors,omitempty"`
 }
 
 // LogicalPanel 逻辑复制面板。

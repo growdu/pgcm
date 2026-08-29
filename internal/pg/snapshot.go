@@ -22,11 +22,12 @@ func (c *Conns) BuildSnapshot(
 		return model.Snapshot{}, fmt.Errorf("no pool for node %s", node.ID)
 	}
 	snap := model.Snapshot{
-		TakenAt:   time.Now().UTC().Format(time.RFC3339),
-		NodeID:    node.ID,
-		NodeName:  node.Name,
-		PGVersion: node.NodeConfig.PGVersion,
-		Slots:     []model.SlotHealth{},
+		TakenAt:     time.Now().UTC().Format(time.RFC3339),
+		NodeID:      node.ID,
+		NodeName:    node.Name,
+		PGVersion:   node.NodeConfig.PGVersion,
+		ClusterKind: node.NodeConfig.ClusterKind,
+		Slots:       []model.SlotHealth{},
 	}
 
 	// 错误聚合器（每个 sub 一行）
