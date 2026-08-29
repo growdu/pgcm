@@ -209,6 +209,14 @@ func buildLogical(ctx context.Context, pool *pgxpool.Pool, r *store.Ring, errByS
 	}
 	panel.Workers = workers
 
+	// sync matrix（脚本 §4）— 失败不致命：subscriber 端 pg_subscription_rel 可能为空。
+	matrix, err := querySyncMatrix(ctx, pool)
+	if err != nil {
+		// 保留空矩阵，不让整次 tick 失败
+		matrix = []model.SyncMatrixCell{}
+	}
+	panel.SyncMatrix = matrix
+
 	return panel, nil
 }
 
