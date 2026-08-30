@@ -2,7 +2,7 @@
 
 > 实施进度跟踪。详细规范见 `docs/`。
 
-## ✅ Phase 1-4：后端骨架 + Snapshot 流水线（已完成）
+## ✅ Phase 1-4：后端骨架 + Snapshot 流水线
 
 ### 实现内容
 
@@ -10,98 +10,80 @@
 | --- | --- | --- |
 | 入口 | `cmd/pgcm/main.go` | flag 解析；5s 安全等待；graceful shutdown；ticker 推 snapshot |
 | 版本 | `internal/version/version.go` | ldflags 注入 Version/Commit/Date |
-| 模型 | `internal/model/types.go` | 与前端 TS 接口 1:1 对应的 Go struct |
+| 模型 | `internal/model/types.go` | 与前端 TS 接口 1:1 对应的 Go struct；Snapshot.ClusterKind 已注入 |
 | 注册表 | `internal/store/nodes.go` | 多节点 + 连接状态元信息 |
 | 滚动窗口 | `internal/store/ring.go` | 5min / 30s 桶 的内存环形 buffer |
 | PG 客户端 | `internal/pg/conns.go` | pgxpool 封装；自动检测集群类型 |
 | 查询 | `internal/pg/queries.go` | 订阅 / worker / replica / slot / spill / error |
-| Snapshot | `internal/pg/snapshot.go` | 聚合单次 tick + spill/stream 5min 差分 |
+| SyncMatrix | `internal/pg/queries_sync.go` | 订阅 srsubstate 分布矩阵 |
+| Snapshot | `internal/pg/snapshot.go` | 聚合单次 tick + spill/stream 5min 差分 + cluster_kind 透传 |
 | HTTP | `internal/server/http.go` | chi 路由；`embed.FS` 静态资源；`/healthz` `/api/v1/*` |
 | Manager | `internal/server/manager.go` | `/api/v1/connect/disconnect/snapshot/ws`；broadcast |
 
 ### 验证
 
-- ✅ `go build -o bin/pgcm ./cmd/pgcm` 编译通过（16 MB，arm64）
-- ✅ `--help` 输出完整 flag 列表
-- ⏳ 端到端（PG 连通 + WS 推送）待集成测试（需要 docker 启动 PG）
+- ✅ `go vet ./...` 通过（CI：`backend` job）
+- ✅ `go test ./... -race -count=1` 通过（含 `model`/`store`/`pg`/`version` 单测）
+- ✅ `go build` 通过；CI 在 `binary` job 跑端到端：`--help` + 监听 `:18080` + curl `/healthz` 断言 `status=='ok'`
+- ⏳ 端到端 PG 连通：本地用 `make smoke`（需要 docker），CI 里可在跑 `binary` job 的 runner 上加 service container
 
 ### 已知简化
 
 | 项 | 现状 | 后续 |
 | --- | --- | --- |
-| 4 段 lag | 只算 `received→applied` 一段（subscriber 端单连接够用） | v0.2 跨 publisher/subscriber 双连接 |
-| 同步状态机 | 未实现 | v0.1 末补（Phase 5 完成时） |
+| 4 段 lag | 只算 `received→applied` + `restart→confirmed_flush`（subscriber 端单连接够用） | v0.2 跨 publisher/subscriber 双连接 |
 | `pg_stat_replication` lag 时长 | subscriber 端该列为 NULL（设计） | 切换 publisher 节点后正常 |
 
 ---
 
-## ⏳ Phase 5-7：前端（部分完成）
+## ✅ Phase 5-7：前端（完成）
 
 ### 已完成
 
-- `web/package.json` Vite + React 18 + TS 5 + Tailwind 3 + Recharts + Zustand 5 + lucide-react
-- `web/vite.config.ts` 含 `/api` `/healthz` 反代到 8080
-- `web/tsconfig.json` strict + path alias `@/*`
-- `web/tailwind.config.js` 含 `severity-{ok,warn,alert,critical}` 色板
-- `web/postcss.config.js`
-- `web/index.html`
-- `web/src/types/index.ts` TypeScript 接口（与 Go struct 1:1）
-- `web/src/lib/format.ts` 字节/时长/速率格式化 + 严重度染色
-- `web/src/store/index.ts` Zustand + persist（lang / theme / refreshInterval / thresholds / nodes）
-- `web/src/api/client.ts` connect / disconnect / snapshot / health
-- `web/src/api/ws.ts` WS 客户端 + 指数退避重连
-- `web/src/i18n/index.ts` 中 / En 文案 dict
-- `web/src/main.tsx` + `web/src/globals.css`
-- `web/src/components/WelcomeScreen.tsx` DSN 表单 + 错误展示
-- `web/src/components/TopBar.tsx` 连接状态 / 主题 / 语言 / 导出 / 断开
-- `web/src/components/SummaryStrip.tsx` 4 卡（max lag / 订阅数 / replica 数 / 严重度）
-
-### 待补
-
-- `LagStackBar.tsx` 4 段 lag 可视化（堆叠条 + 对数映射）
-- `RateCards.tsx` 4 卡速率（total / tps / stream / spill）
-- `SpillCards.tsx` 4 卡 spill
-- `SubscriptionTable.tsx` 订阅主表 + 行折叠（worker / errors / slot）
-- `ReplicaTable.tsx` 物理 replica 表
-- `SettingsDrawer.tsx` 节点列表 / 刷新间隔 / 阈值 / 主题 / 语言
-- `App.tsx` 顶层布局 + WS 订阅
-- `web/dist/` 产物
+- 配置：`web/package.json` `web/vite.config.ts` `web/tsconfig.json` `web/tailwind.config.js` `web/postcss.config.js` `web/index.html`
+- 入口：`web/src/main.tsx` `web/src/App.tsx`（顶层布局 + WS tick dispatcher）
+- 类型：`web/src/types/index.ts` 与 Go struct 1:1
+- 工具：`web/src/lib/format.ts` `web/src/store/index.ts`（Zustand + persist） `web/src/api/{client,ws}.ts` `web/src/i18n/index.ts`（中/英）
+- 组件：`WelcomeScreen` `TopBar` `NodeSwitcher` `SummaryStrip` `LagStackBar` `LagTrendMiniChart` `RateCards` `SpillCards` `SubscriptionTable` `ReplicaTable` `WorkerTable` `SlotList` `SyncMatrix` `ErrorGrid` `SeverityBadge` `SettingsDrawer`
+- 主题：dark mode + severity-* 色板（`globals.css`）
 
 ### 待跑
 
-```
-cd web && pnpm install   # 没沙箱网络，先试 goproxy.cn 镜像
-cd web && pnpm build     # 产物输出到 web/dist
-```
+`pnpm install && pnpm build` 产出 `web/dist/`；CI 在 `frontend` job 跑。
 
 ---
 
-## ⏳ Phase 8：Dockerfile / docker-compose / smoke test
+## ✅ Phase 8：Docker / Compose / Smoke
 
-未开始。
+- `Dockerfile`（3 阶段：node → golang → distroless `nonroot`）
+- `docker-compose.yml`（publisher:5432 + pgcm:8080，subscriber slot 预留 v0.2）
+- `scripts/sql/01-init-publisher.sql`（演示 publication）
+- `scripts/smoke.sh`（docker run pg + ./bin/pgcm + curl /healthz）
+- `make smoke / docker-build / docker-run / docker-push` 目标
 
 ---
 
-## 总览
+## ✅ Phase 9：CI / CD
 
-```
-pgcm/
-├── docs/          ✅ 6 篇设计文档
-├── cmd/pgcm/      ✅ main.go + 静态目录
-├── internal/      ✅ server / pg / store / model / version
-├── web/           ⏳ 配置 + 部分组件
-├── bin/pgcm       ✅ 16MB 编译产物
-├── go.mod         ✅
-├── Makefile       ✅
-└── PROGRESS.md    ✅ 本文件
-```
+- `.github/workflows/ci.yml` 三 job：`backend` (vet/test/build) → `frontend` (pnpm install/typecheck/build) → `binary` (assemble embedded frontend + smoke `/healthz`)
+- `.github/workflows/release.yml` `v*` tag 触发：goreleaser 5 平台二进制 + docker multi-arch + homebrew tap
+- `.github/dependabot.yml` gomod/npm/github-actions/docker 每周更新
+- `.goreleaser.yml` 5 平台矩阵 + ldflags 注入版本号
+
+---
 
 ## 下次开工第一步
 
 ```bash
-cd web && pnpm install && pnpm build   # 拉依赖 + 构建前端
-make                                    # 重新编译带前端产物的二进制
-docker run -d --name pg-test -p 55432:5432 -e POSTGRES_PASSWORD=test postgres:18
-./bin/pgcm --listen 127.0.0.1:8080 --dsn 'postgres://postgres:test@localhost:55432/postgres'
-# 浏览器打开 http://127.0.0.1:8080
+make build            # pnpm build + go build (embed)
+make smoke            # 本地端到端 (docker run pg + ./bin/pgcm + curl /healthz)
+make docker-build     # 单镜像测试
+docker compose up -d  # publisher + pgcm
+# 浏览器打开 http://127.0.0.1:8080  →  填 DSN → 看仪表盘
 ```
+
+## CI 当前状态
+
+- `main` 分支每次 push 触发 `ci.yml`
+- `v*` tag 触发 `release.yml`
+- Artifacts：`pgcm-bin`（14 天）、`web-dist`（7 天）
