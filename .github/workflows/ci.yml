@@ -42,6 +42,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 9
+      - name: pnpm install
         working-directory: web
         run: pnpm install
       - name: pnpm typecheck
@@ -85,6 +86,7 @@ jobs:
         run: ./bin/pgcm --help
       - name: smoke test (--listen then curl /healthz)
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq jq
           ./bin/pgcm --listen 127.0.0.1:18080 &
           PGCM_PID=$!
           sleep 2
