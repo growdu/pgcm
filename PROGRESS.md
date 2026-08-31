@@ -141,3 +141,62 @@ Artifacts：`pgcm-bin`（14 天）、`web-dist`（7 天）
 - `make smoke` 本地端到端（需 docker，沙箱里无）
 - `--allow-remote` 在 CI smoke 里没单独覆盖（默认值 127.0.0.1 没问题）
 - 前端 `pnpm-lock.yaml` 还没 commit（CI 当前不用 `--frozen-lockfile`，能过）
+
+---
+
+## ✅ Phase 11：lockfile 收口 + pnpm v9 workspace 修复
+
+### 背景
+
+Phase 10 之后 lockfile 已 commit（5a0ebc4），按 PROGRESS.md 的计划
+该 re-enable `--frozen-lockfile`。但在 CI 里一开就挂：
+
+```
+Web · install + typecheck + build  pnpm install
+  ERROR  packages field missing or empty
+```
+
+### 根因
+
+仓库里 commit 的 `web/pnpm-workspace.yaml` 是：
+
+```yaml
+allowBuilds:
+  esbuild: true
+```
+
+- `allowBuilds` 是 pnpm **v10** 才有的字段（控制 install 时允许运行
+  postinstall 脚本的包）
+- CI 锁定 pnpm **v9**。v9 不识别 `allowBuilds`，但 `pnpm-workspace.yaml`
+  存在本身就让 v9 把仓库当成 monorepo，要求 `packages` 字段
+- lockfile (`lockfileVersion: '9.0'`) 是用 v10 在 dev 机器上生成的，
+  所以带 `allowBuilds`；CI 上 v9 解析失败
+
+### 修法（`f0c80f5`）
+
+- 删 `web/pnpm-workspace.yaml`（本仓库是单 package，不是 monorepo，
+  没有 legitimate reason 留这个文件）
+- 把 `esbuild` postinstall 放行改用 pnpm v9 原生写法：
+  `package.json` 里加 `"pnpm": { "onlyBuiltDependencies": ["esbuild"] }`
+  （v9 默认禁用 postinstall 以做安全加固）
+
+### 步骤
+
+1. `d831612` — ci(frontend): pnpm install --frozen-lockfile （首次尝试，CI 红）
+2. `f0c80f5` — fix(frontend): drop pnpm-workspace.yaml + add onlyBuiltDependencies
+
+### CI 收口（run `33404384874`）
+
+| Job | 时长 | 状态 |
+| --- | --- | --- |
+| Go · vet + test + build | 16s | ✓ |
+| Web · install + typecheck + build | 29s | ✓ |
+| Binary · full build (frontend embedded) | 34s | ✓ |
+
+至此 Phase 10 PROGRESS.md 里"前端 `pnpm-lock.yaml` 还没 commit"那条
+遗留项真正落地。
+
+### 仍待办
+
+- `make smoke` 本地端到端（需 docker）
+- `--allow-remote` 在 CI smoke 里没单独覆盖
