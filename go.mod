@@ -1,6 +1,6 @@
 module github.com/pgcm/pgcm
 
-go 1.26.1
+go 1.22
 
 require (
 	github.com/coder/websocket v1.8.15

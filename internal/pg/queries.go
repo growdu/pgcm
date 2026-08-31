@@ -12,12 +12,23 @@ import (
 )
 
 // querySubscriptions 跑脚本 §1 的子集（单连接：subscriber 视角），返回订阅表主行。
+//
+// v0.1 单连接设计：subscriber 端只能看到自己的 slot 和 worker，无法看到 publisher
+// walsender 的 flush_lsn。因此 4 段 lag 中：
+//   - seg_pub_to_flush     = pg_wal_lsn_diff(restart_lsn, confirmed_flush_lsn)  [近似]
+//   - seg_flush_to_received = 0（subscriber 端不可见，等 v0.2 跨 publisher+subscriber 双连接）
+//   - seg_received_to_applied = received_lsn - latest_end_lsn
+//   - total_lag = 上述三段之和
 func querySubscriptions(ctx context.Context, pool *pgxpool.Pool) ([]model.SubscriptionSummary, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT
 			s.subname,
 			s.subenabled,
 			COALESCE(s.subslotname, '') AS slot_name,
+			sub_slot.confirmed_flush_lsn::text AS slot_confirmed_flush_lsn,
+			sub_slot.restart_lsn::text          AS slot_restart_lsn,
+			COALESCE(sub_slot.wal_status, '')   AS slot_wal_status,
+			COALESCE(pg_wal_lsn_diff(pg_current_wal_lsn(), sub_slot.confirmed_flush_lsn), 0) AS slot_wal_retention_bytes,
 			sub_stats.received_lsn::text,
 			sub_stats.latest_end_lsn::text,
 			sub_stats.last_msg_receipt_time,
@@ -32,6 +43,7 @@ func querySubscriptions(ctx context.Context, pool *pgxpool.Pool) ([]model.Subscr
 			COALESCE(ss.confl_delete_origin_differs, 0),
 			COALESCE(ss.confl_multiple_unique_conflicts, 0)
 		FROM pg_subscription s
+		LEFT JOIN pg_replication_slots sub_slot ON sub_slot.slot_name = s.subslotname
 		LEFT JOIN pg_stat_subscription sub_stats
 		       ON sub_stats.subid = s.oid AND sub_stats.relid IS NULL
 		LEFT JOIN pg_stat_subscription_stats ss ON ss.subid = s.oid
@@ -45,6 +57,7 @@ func querySubscriptions(ctx context.Context, pool *pgxpool.Pool) ([]model.Subscr
 	var out []model.SubscriptionSummary
 	for rows.Next() {
 		var s model.SubscriptionSummary
+		var confirmedFlushLSN, restartLSN *string
 		var receivedLSN, latestEndLSN *string
 		var lastRecv *time.Time
 		var workerType string
@@ -53,6 +66,8 @@ func querySubscriptions(ctx context.Context, pool *pgxpool.Pool) ([]model.Subscr
 
 		if err := rows.Scan(
 			&s.SubName, &s.SubEnabled, &s.SlotName,
+			&confirmedFlushLSN, &restartLSN,
+			&s.SlotWalStatus, &s.SlotWalRetentionB,
 			&receivedLSN, &latestEndLSN, &lastRecv,
 			&s.ApplyWorkerPID, &workerType,
 			&s.ApplyErrorCount,
@@ -63,9 +78,18 @@ func querySubscriptions(ctx context.Context, pool *pgxpool.Pool) ([]model.Subscr
 		if lastRecv != nil {
 			s.LastRecvAgeSeconds = time.Since(*lastRecv).Seconds()
 		}
+		if confirmedFlushLSN != nil && restartLSN != nil {
+			if d, derr := lsnDiff(*restartLSN, *confirmedFlushLSN, pool, ctx); derr == nil && d > 0 {
+				s.SegPubToFlush = d
+			}
+		}
 		if receivedLSN != nil && latestEndLSN != nil {
 			seg, _ := lsnDiff(*receivedLSN, *latestEndLSN, pool, ctx)
 			s.SegReceivedToApplied = seg
+		}
+		s.TotalLag = s.SegPubToFlush + s.SegFlushToReceived + s.SegReceivedToApplied
+		if workerType != "" {
+			s.WorkerType = &workerType
 		}
 		conflicts["confl_insert_exists"] = ci
 		conflicts["confl_update_exists"] = cu
@@ -313,6 +337,18 @@ func severityOf(s model.SubscriptionSummary) string {
 		return "critical"
 	}
 	if s.TotalLag >= 1024*1024*1024 {
+		bad = "warn"
+	}
+	if s.SlotWalRetentionB >= 100*1024*1024*1024 {
+		return "critical"
+	}
+	if s.SlotWalRetentionB >= 50*1024*1024*1024 {
+		bad = "warn"
+	}
+	if s.SlotWalStatus == "lost" {
+		return "critical"
+	}
+	if s.SlotWalStatus == "unreserved" {
 		bad = "warn"
 	}
 	if s.ApplyErrorCount >= 50 {
