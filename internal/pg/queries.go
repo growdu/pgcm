@@ -267,14 +267,29 @@ func queryReplicas(ctx context.Context, pool *pgxpool.Pool) ([]model.PhysicalRep
 }
 
 func querySlotHealth(ctx context.Context, pool *pgxpool.Pool) ([]model.SlotHealth, error) {
+	// 探测本次连接的 server_version_num，决定 inactive_since 是否可用。
+	// inactive_since / wal_status / invalidation_reason 都在 PG 11 添加。
+	// PG < 11 时省略这些列，避免 'column does not exist' 报错挂掉整个 snapshot。
+	var pgvNum int
+	if err := pool.QueryRow(ctx, "SHOW server_version_num").Scan(&pgvNum); err != nil {
+		pgvNum = 0
+	}
+	inactiveExpr := "NULL::float8"
+	walStatusExpr := "''"
+	invalidExpr := "NULL::text"
+	if pgvNum >= 110000 {
+		inactiveExpr = "extract(epoch from (now() - inactive_since))::float8"
+		walStatusExpr = "wal_status"
+		invalidExpr = "invalidation_reason"
+	}
 	rows, err := pool.Query(ctx, `
 		SELECT slot_name, plugin, slot_type,
 		       active, active_pid IS NOT NULL,
 		       restart_lsn::text, confirmed_flush_lsn::text,
 		       pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn),
 		       pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn),
-		       extract(epoch from (now() - inactive_since))::float8,
-		       wal_status, invalidation_reason
+		       `+inactiveExpr+`,
+		       `+walStatusExpr+`, `+invalidExpr+`
 		FROM pg_replication_slots
 		ORDER BY slot_name
 	`)

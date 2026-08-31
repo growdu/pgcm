@@ -91,6 +91,11 @@ func runTicker(ctx context.Context, logger *slog.Logger, mgr *server.Manager, re
 			return
 		case <-tk.C:
 			for _, id := range reg.All() {
+				if !mgr.HasPool(id) {
+					// 节点尚未连接 / 连接失败 / 已断开。registry 暂时留着，
+					// 等用户重连或显式 disconnect。不刷 WARN。
+					continue
+				}
 				snap, err := mgr.BuildSnapshotFor(ctx, id)
 				if err != nil {
 					logger.Warn("tick snapshot failed", "node", id, "err", err)

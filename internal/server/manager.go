@@ -247,6 +247,13 @@ func (m *Manager) buildSnapshot(ctx context.Context, nodeID string) (model.Snaps
 }
 
 // BuildSnapshotFor 暴露给 ticker；行为等同 buildSnapshot 但语义独立。
+// HasPool 报告指定节点是否已有活跃 pool。
+// ticker 用它过滤未连接 / 连接失败的节点，避免每 5s 刷 'no pool for node' WARN。
+func (m *Manager) HasPool(nodeID string) bool {
+	_, ok := m.conns.Pool(nodeID)
+	return ok
+}
+
 func (m *Manager) BuildSnapshotFor(ctx context.Context, nodeID string) (model.Snapshot, error) {
 	return m.buildSnapshot(ctx, nodeID)
 }

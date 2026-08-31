@@ -2,16 +2,17 @@ package model
 
 // NodeConfig 表示用户配置的单个 PG 节点。
 type NodeConfig struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Role       string `json:"role"` // publisher / subscriber / primary / replica / standalone
-	Host       string `json:"host"`
-	Port       int    `json:"port"`
-	DBName     string `json:"dbname"`
-	User       string `json:"user"`
-	Password   string `json:"password"`
-	SSLMode    string `json:"sslMode"` // disable / require / verify-ca / verify-full
-	PGVersion  string `json:"pgVersion,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Role         string `json:"role"` // publisher / subscriber / primary / replica / standalone
+	Host         string `json:"host"`
+	Port         int    `json:"port"`
+	DBName       string `json:"dbname"`
+	User         string `json:"user"`
+	Password     string `json:"password"`
+	SSLMode      string `json:"sslMode"` // disable / require / verify-ca / verify-full
+	PGVersion    string `json:"pgVersion,omitempty"`
+	PGVersionNum int    `json:"pgVersionNum,omitempty"` // server_version_num，用于查询版本分支
 	ClusterKind string `json:"clusterKind,omitempty"` // logical / physical / hybrid / standalone
 }
 

@@ -56,6 +56,13 @@ func (c *Conns) Connect(ctx context.Context, cfg *model.NodeConfig) (string, str
 		pool.Close()
 		return "", "", fmt.Errorf("version: %w", err)
 	}
+	// server_version_num 用于查询里的版本分支（110000 = PG 11，添加了
+	// inactive_since / wal_status / invalidation_reason 等列）。
+	// 老版本 PG 没这个 GUC 时不阻断连接，只是不做版本分支。
+	var pgvNum int
+	if err := pool.QueryRow(ctx, "SHOW server_version_num").Scan(&pgvNum); err != nil {
+		pgvNum = 0
+	}
 
 	kind, err := detectClusterKind(ctx, pool)
 	if err != nil {
@@ -68,6 +75,7 @@ func (c *Conns) Connect(ctx context.Context, cfg *model.NodeConfig) (string, str
 	c.mu.Unlock()
 
 	cfg.PGVersion = pgv
+	cfg.PGVersionNum = pgvNum
 	cfg.ClusterKind = kind
 	return pgv, kind, nil
 }
