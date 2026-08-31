@@ -43,7 +43,7 @@ jobs:
           version: 9
       - name: pnpm install
         working-directory: web
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
       - name: pnpm typecheck
         working-directory: web
         run: pnpm typecheck
