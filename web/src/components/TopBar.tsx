@@ -87,7 +87,7 @@ export function TopBar({ onSettings }: Props) {
         <button
           onClick={onSettings}
           className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
-          title={t.settings}
+          title={t.settingsTitle}
         >
           <Settings className="w-4 h-4" />
         </button>

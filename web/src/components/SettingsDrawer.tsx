@@ -364,7 +364,7 @@ export function SettingsDrawer({ open, onClose }: Props) {
               {THRESHOLD_KEYS.map((k) => {
                 const unit = THRESHOLD_UNITS[k];
                 const labelKey = THRESHOLD_LABEL_KEY[k];
-                const label = (t as Record<string, string>)[labelKey] ?? k;
+                const label = ((t as unknown as Record<string, unknown>)[labelKey] as string) ?? k;
                 return (
                   <div
                     key={k}

@@ -60,7 +60,7 @@ export function App() {
         if (!isObject(raw)) continue;
         const nodeId = readString(raw, 'node_id');
         if (!nodeId) continue;
-        const snap = raw as Parameters<typeof setSnapshot>[1];
+        const snap = raw as unknown as Parameters<typeof setSnapshot>[1];
         setSnapshot(nodeId, snap);
         // Sync currentNodeId from first observed tick when store is empty.
         const { currentNodeId: cur } = useApp.getState();
@@ -113,7 +113,7 @@ function Dashboard({ settingsOpen, onSettings, onCloseSettings }: DashboardProps
   const syncMatrix: SyncMatrixCell[] = useMemo(() => {
     const raw = (snap as unknown as { sync_matrix?: unknown })?.sync_matrix;
     const fromTop = Array.isArray(raw) ? (raw as SyncMatrixCell[]) : [];
-    const fromLogical = (logical?.sync_matrix ?? []) as unknown as SyncMatrixCell[];
+    const fromLogical = ((logical as unknown as { sync_matrix?: SyncMatrixCell[] } | undefined)?.sync_matrix ?? []) as SyncMatrixCell[];
     return fromTop.length > 0 ? fromTop : fromLogical;
   }, [snap, logical]);
 

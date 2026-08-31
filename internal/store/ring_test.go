@@ -7,7 +7,8 @@ import (
 
 func TestRingPushAndWindow(t *testing.T) {
 	r := NewRing(60*time.Second, 10)
-	now := time.Now()
+	// 对齐到 bucket 边界，避免两个 push 落在不同 10s 桶（flaky）。
+	now := time.Now().Truncate(10 * time.Second)
 	r.Push(Sample{TS: now, Values: map[string]int64{"a": 1}})
 	r.Push(Sample{TS: now.Add(5 * time.Second), Values: map[string]int64{"a": 2}})
 
