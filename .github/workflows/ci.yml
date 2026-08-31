@@ -72,6 +72,8 @@ jobs:
         with:
           name: web-dist
           path: web/dist
+      - name: go mod tidy
+        run: go mod tidy
       - name: sync web/dist → cmd/pgcm/static
         run: |
           rm -rf cmd/pgcm/static
